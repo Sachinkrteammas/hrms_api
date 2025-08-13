@@ -126,6 +126,7 @@ class CandidateUpdate(BaseModel):
 class CandidateLogin(BaseModel):
     email: str = Field(..., min_length=1)
     password: Optional[str] = None
+    id: Optional[int] = None
 
 class CandidateResponse(BaseModel):
     id: int

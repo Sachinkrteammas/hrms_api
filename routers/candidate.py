@@ -337,6 +337,8 @@ async def update_candidate(
 ):
     """Update candidate information"""
     candidate_service = CandidateService(db)
+
+    # Default behavior: update the existing candidate record
     candidate = await candidate_service.update_candidate(candidate_data, current_candidate.id)
     
     slug = None

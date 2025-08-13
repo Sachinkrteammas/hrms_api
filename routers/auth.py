@@ -14,6 +14,8 @@ from dependencies.auth import (
     generate_access_token, get_current_user
 )
 from services.email_service import EmailService
+from services.candidate_service import CandidateService
+from utils.candidate_utils import decrypt_slug
 
 router = APIRouter()
 security = HTTPBearer()
@@ -257,3 +259,16 @@ async def get_current_user_info(
         role=role.name if role else "",
         created_at=current_user.created_at
     ) 
+
+@router.post("/candidate/loginBySlug")
+async def candidate_login_by_slug(payload: dict, db: Session = Depends(get_db)):
+    try:
+        slug = payload.get("slug", "")
+        email = payload.get("email", "")
+        if not slug or not email:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Missing slug or email")
+        candidate_id = decrypt_slug(slug)
+        service = CandidateService(db)
+        return await service.candidate_login(type("LoginData", (), {"email": email, "password": None, "id": candidate_id}))
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials") 

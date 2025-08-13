@@ -97,7 +97,7 @@ class EmailService:
             <p>Dear {candidate.first_name},</p>
             <p>You have been invited to complete your background verification for {company_name}.</p>
             <p>Please click the link below to access your verification portal:</p>
-            <p><a href="http://localhost:3001/login/{encrypt_slug(str(candidate.id))}">Access Verification Portal</a></p>
+            <p><a href=\"{settings.FRONTEND_URL}/login/{encrypt_slug(str(candidate.id))}\">Access Verification Portal</a></p>
             <p>Best regards,<br>HR Team</p>
         </body>
         </html>
@@ -113,7 +113,7 @@ class EmailService:
         You have been invited to complete your background verification for {company_name}.
 
         Please visit the following link to access your verification portal:
-        http://localhost:3001/login/{encrypt_slug(str(candidate.id))}
+        {settings.FRONTEND_URL}/login/{encrypt_slug(str(candidate.id))}
 
         Best regards,
         HR Team

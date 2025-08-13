@@ -414,9 +414,18 @@ class CandidateService:
 
     async def candidate_login(self, login_data: CandidateLogin) -> Dict[str, Any]:
         """Candidate login"""
-        candidate = self.db.query(Candidate).filter(
-            Candidate.email == login_data.email
-        ).first()
+        email_normalized = (login_data.email or "").strip().lower()
+
+        candidate: Optional[Candidate] = None
+        # If id is provided (from slug), validate that the email matches that candidate
+        if getattr(login_data, "id", None):
+            candidate = self.db.query(Candidate).filter(Candidate.id == login_data.id).first()
+            if not candidate or (candidate.email or "").strip().lower() != email_normalized:
+                raise ValueError("Invalid credentials")
+        else:
+            candidate = self.db.query(Candidate).filter(
+                Candidate.email == email_normalized
+            ).first()
         
         if not candidate:
             raise ValueError("Invalid credentials")

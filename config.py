@@ -19,7 +19,7 @@ class Settings(BaseSettings):
     FROM_EMAIL: str = "sachinkr78276438@gmail.com"
     
     # Frontend settings
-    FRONTEND_URL: str = "http://localhost:3000"
+    FRONTEND_URL: str = "http://localhost:3001"
     
     # Verification API settings
     VERIFICATION_API_BASE_URL: str = "https://api.verification.com"
