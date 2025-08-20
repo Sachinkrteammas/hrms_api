@@ -21,9 +21,29 @@ class Settings(BaseSettings):
     # Frontend settings
     FRONTEND_URL: str = "http://localhost:3001"
     
-    # Verification API settings
+    # Verification API settings (generic)
     VERIFICATION_API_BASE_URL: str = "https://api.verification.com"
     VERIFICATION_API_KEY: str = "your-api-key"
+    
+    # External providers (Befisc, Crimescan, Prescreening, Monnai)
+    BEFISC_API_KEY: str = "VNTY4LP3MBMHDXE"
+    PRESCREENING_API_KEY: str = os.getenv("PRESCREENING_API_KEY", "")
+    CRIMESCAN_API_KEY: str = os.getenv("CRIMESCAN_API_KEY", "")
+    MONNAI_CLIENT_ID: Optional[str] = os.getenv("MONNAI_CLIENT_ID")
+    MONNAI_CLIENT_SECRET: Optional[str] = os.getenv("MONNAI_CLIENT_SECRET")
+
+    # External provider URLs
+    PAN_VERIFY_URL: str = "https://pan-verification-basic.befisc.com/"
+    AADHAAR_SEND_OTP_URL: str = "https://aadhaar-xml-send-otp.befisc.com/"
+    AADHAAR_VERIFY_URL: str = "https://aadhaar-xml-download.befisc.com/"
+    AADHAAR_TO_UAN_URL: str = "https://aadhaar-to-uan.befisc.com/"
+    EMPLOYMENT_HISTORY_URL: str = "https://employment-history.befisc.com/v2"
+    AML_BASE_URL: str = "https://datafacade.prescreening.io/"
+    COURT_EXACT_SEARCH_URL: str = "https://prod.crimescan.ai/v1/crime_search/risk/exact/search"
+    COURT_HISTORY_URL: str = "https://prod.crimescan.ai/v1/crime_search/results"
+    BANK_ACCOUNT_BASE_URL: str = "https://bank-account-verification.befisc.com/"
+    MONNAI_TOKEN_URL: str = "https://auth.monnai.com/oauth2/token"
+    MONNAI_INSIGHTS_URL: str = "https://app.monnai.com/api/insights"
     
     # AWS S3 settings (for file uploads)
     AWS_ACCESS_KEY_ID: Optional[str] = None

@@ -222,6 +222,7 @@ async def get_candidate_details_by_slug(
     education_list = getattr(candidate, "educations", []) or []
     employment_list = getattr(candidate, "employments", []) or []
     bank = getattr(candidate, "bank_account", None)
+    bank_report = getattr(candidate, "report_bank_account", None)
     # Fallback for DOB from aadhar details if primary is missing
     dob_str = (
         candidate.dob.isoformat() if getattr(candidate, "dob", None) else (
@@ -250,6 +251,7 @@ async def get_candidate_details_by_slug(
             "pan": getattr(nid, "pan", "") if nid else "",
             "passport": getattr(nid, "passport", "") if nid else "",
             "aadharNo": getattr(nid, "aadhar_no", "") if nid else "",
+            "uanNo": getattr(nid, "uan_no", "") if nid else "",
             "panNo": getattr(nid, "pan_no", "") if nid else "",
             "passportNo": getattr(nid, "passport_no", "") if nid else "",
         },
@@ -310,6 +312,11 @@ async def get_candidate_details_by_slug(
             "accountNo": getattr(bank, "account_no", None) if bank else None,
             "ifsc": getattr(bank, "ifsc", None) if bank else None,
             "name": getattr(bank, "name", None) if bank else None,
+            "beneficiaryName": (
+                (getattr(bank, "name", None) if bank else None)
+                or (((getattr(bank_report, "data", None) or {}).get("beneficiaryName")) if bank_report else None)
+                or (((((getattr(bank_report, "apis", None) or {}).get("bank_account", {})).get("beneficiaryName"))) if bank_report else None)
+            ),
         },
     }
 
@@ -336,6 +343,11 @@ async def update_candidate(
     db: Session = Depends(get_db)
 ):
     """Update candidate information"""
+    print(f"🔄 Candidate {current_candidate.id} updating with data: {candidate_data}")
+    print(f"🔄 Verify flag: {candidate_data.verify}")
+    if hasattr(candidate_data, 'bankAccount') and candidate_data.bankAccount:
+        print(f"🏦 Bank account data: {candidate_data.bankAccount}")
+    
     candidate_service = CandidateService(db)
 
     # Default behavior: update the existing candidate record
@@ -343,10 +355,21 @@ async def update_candidate(
     
     slug = None
     if candidate_data.verify:
+        print(f"🚀 Candidate {current_candidate.id} wants verification - starting pipeline")
         slug = encrypt_slug(str(current_candidate.id))
         await candidate_service.update_candidate_status("SUBMITTED", current_candidate.id)
-        # TODO: Start verification process
-    
+        # Start verification in background (fire-and-forget)
+        try:
+            import asyncio
+            print(f"🚀 Starting verification pipeline for candidate {current_candidate.id}")
+            # Run verification pipeline directly instead of fire-and-forget
+            await candidate_service.run_verification_pipeline(current_candidate.id)
+            print(f"✅ Verification pipeline completed for candidate {current_candidate.id}")
+        except Exception as e:
+            print(f"❌ Verification pipeline failed for candidate {current_candidate.id}: {e}")
+            # Don't fail the request if verification fails
+            pass
+        
     return BaseResponse(
         message="Candidate updated successfully",
         slug=slug
@@ -427,6 +450,130 @@ async def approve_candidate(
     if not ok:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Candidate not found")
     return BaseResponse(message="Candidate approved successfully")
+
+@router.post("/{candidate_id}/verify-bank", response_model=BaseResponse)
+async def verify_bank_account(
+    candidate_id: int,
+    current_user: User = Depends(get_current_admin_user),
+    db: Session = Depends(get_db)
+):
+    """Manually trigger bank account verification for testing"""
+    candidate_service = CandidateService(db)
+    candidate = await candidate_service.get_candidate_by_id(candidate_id)
+    if not candidate:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Candidate not found")
+    
+    # Run just the bank verification part
+    from services.verification_service import VerificationService
+    verifier = VerificationService()
+    
+    if candidate.bank_account and candidate.bank_account.account_no and candidate.bank_account.ifsc:
+        bank_payload = {
+            "accountNo": candidate.bank_account.account_no,
+            "ifsc": candidate.bank_account.ifsc,
+            "name": candidate.bank_account.name,
+        }
+        print(f"🔍 Manual bank verification for candidate {candidate_id}: {bank_payload}")
+        
+        try:
+            bank = await verifier.bank_account_verification(bank_payload)
+            print(f"📡 Manual bank API response: {bank}")
+            
+            # Update the bank report
+            bank_report = candidate.report_bank_account
+            if not bank_report:
+                from models.verification import ReportBankAccount
+                bank_report = ReportBankAccount(candidate_id=candidate_id)
+                db.add(bank_report)
+                db.flush()
+            
+            apis = bank_report.apis or {}
+            apis["bank_account"] = bank
+            bank_report.apis = apis
+            
+            # Extract beneficiary name
+            beneficiary_name = None
+            try:
+                beneficiary_name = (
+                    bank.get("beneficiaryName")
+                    or bank.get("beneficiary_name")  # Add underscore version
+                    or (bank.get("result") or {}).get("beneficiaryName")
+                    or (bank.get("result") or {}).get("beneficiary_name")  # Add underscore version
+                    or (bank.get("data") or {}).get("beneficiaryName")
+                    or (bank.get("data") or {}).get("beneficiary_name")  # Add underscore version
+                    or (bank.get("ifscInfo") or {}).get("accountHolderName")
+                    or bank.get("name")
+                )
+                print(f"🏦 Manual extraction - beneficiary name: {beneficiary_name}")
+            except Exception as e:
+                print(f"❌ Manual extraction error: {e}")
+                beneficiary_name = None
+            
+            if beneficiary_name:
+                candidate.bank_account.name = beneficiary_name
+                print(f"✏️ Updated bank account name to: {beneficiary_name}")
+            
+            # Update report data
+            bank_data = bank_report.data or {}
+            bank_data.update({
+                "beneficiaryName": beneficiary_name,
+                "nameMatchScore": bank.get("nameMatchScore"),
+                "nameMatchStatus": bank.get("nameMatchStatus"),
+                "verificationStatus": bank.get("verificationStatus") or bank.get("status"),
+            })
+            bank_report.data = bank_data
+            
+            db.commit()
+            return BaseResponse(message=f"Bank verification completed. API response: {bank}")
+            
+        except Exception as e:
+            print(f"❌ Manual bank verification error: {e}")
+            return BaseResponse(message=f"Bank verification failed: {str(e)}")
+    else:
+        return BaseResponse(message="Candidate has no bank account details to verify")
+
+@router.post("/{candidate_id}/create-bank-account", response_model=BaseResponse)
+async def create_bank_account(
+    candidate_id: int,
+    bank_data: dict,
+    current_user: User = Depends(get_current_admin_user),
+    db: Session = Depends(get_db)
+):
+    """Manually create bank account record for testing"""
+    candidate_service = CandidateService(db)
+    candidate = await candidate_service.get_candidate_by_id(candidate_id)
+    if not candidate:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Candidate not found")
+    
+    try:
+        from models.candidate import CandidateBankAccount
+        
+        # Check if bank account already exists
+        existing_bank = db.query(CandidateBankAccount).filter_by(candidate_id=candidate_id).first()
+        
+        if existing_bank:
+            # Update existing
+            existing_bank.account_no = bank_data.get("accountNo")
+            existing_bank.ifsc = bank_data.get("ifsc")
+            existing_bank.name = bank_data.get("name")
+            message = "Bank account updated"
+        else:
+            # Create new
+            new_bank = CandidateBankAccount(
+                candidate_id=candidate_id,
+                account_no=bank_data.get("accountNo"),
+                ifsc=bank_data.get("ifsc"),
+                name=bank_data.get("name")
+            )
+            db.add(new_bank)
+            message = "Bank account created"
+        
+        db.commit()
+        return BaseResponse(message=f"{message} successfully. Now you can run bank verification.")
+        
+    except Exception as e:
+        db.rollback()
+        return BaseResponse(message=f"Failed to create bank account: {str(e)}")
 
 # Reference check endpoints
 @router.get("/reference", response_model=List[ReferenceResponse])
@@ -653,6 +800,7 @@ async def add_complete_candidate(
                 pan=nid_data.get("pan"),
                 passport=nid_data.get("passport"),
                 aadhar_no=nid_data.get("aadhar_no"),
+                uan_no=nid_data.get("uan_no"),
                 pan_no=nid_data.get("pan_no"),
                 passport_no=nid_data.get("passport_no")
             )

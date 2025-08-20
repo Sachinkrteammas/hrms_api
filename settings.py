@@ -3,4 +3,5 @@
 # SECURITY SETTINGS
 SECRET_KEY = "your_secret"  # Change this to a long, random string in production
 ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 60  # Token expiry in minutes 
+ACCESS_TOKEN_EXPIRE_MINUTES = 60  # Token expiry in minutes
+BEFISC_API_KEY = "VNTY4LP3MBMHDXE"

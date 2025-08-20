@@ -79,6 +79,7 @@ class CandidateNid(Base):
     pan = Column(String(255), nullable=True)
     passport = Column(String(255), nullable=True)
     aadhar_no = Column(String(20), nullable=True)
+    uan_no = Column(String(20), nullable=True)
     pan_no = Column(String(20), nullable=True)
     passport_no = Column(String(20), nullable=True)
 

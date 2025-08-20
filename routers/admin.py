@@ -35,6 +35,57 @@ def normalize_status(status_name: str | None) -> str:
         return "VERIFIED"
     return upper
 
+def calculate_tow_time(candidate) -> str:
+    """Calculate Time of Work (TOW) based on employment history and verification time"""
+    try:
+        # Calculate work experience component (70% weight)
+        work_experience_score = 0
+        if candidate.employments and len(candidate.employments) > 0:
+            total_years = 0
+            for emp in candidate.employments:
+                if emp.starts_from:
+                    start_date = emp.starts_from
+                    end_date = emp.ends_at if emp.ends_at else datetime.utcnow().date()
+                    
+                    # Calculate years between start and end
+                    years = (end_date - start_date).days / 365.25
+                    total_years += years
+            
+            # Convert years to percentage (assuming 10+ years = 100%)
+            if total_years >= 10:
+                work_experience_score = 100
+            elif total_years <= 0:
+                work_experience_score = 0
+            else:
+                work_experience_score = int((total_years / 10) * 100)
+        else:
+            work_experience_score = 0
+        
+        # Calculate verification time component (30% weight)
+        verification_time_score = 0
+        if candidate.created_at:
+            # Calculate days since candidate was created
+            days_since_creation = (datetime.utcnow().date() - candidate.created_at.date()).days
+            
+            # If verification completed within 7 days = 100%, if > 30 days = 0%
+            if days_since_creation <= 7:
+                verification_time_score = 100
+            elif days_since_creation >= 30:
+                verification_time_score = 0
+            else:
+                verification_time_score = int(((30 - days_since_creation) / 23) * 100)
+        else:
+            verification_time_score = 50  # Default if no creation date
+        
+        # Calculate weighted average
+        final_score = int((work_experience_score * 0.7) + (verification_time_score * 0.3))
+        
+        return f"{final_score}%"
+            
+    except Exception as e:
+        print(f"Error calculating TOW time: {e}")
+        return "25%"  # Default fallback
+
 @router.get("/dashboard")
 async def get_admin_dashboard(
     current_user: User = Depends(get_current_admin_user),
@@ -214,12 +265,14 @@ async def get_admin_report_detail(
             "isPanVerified": True,
             "currentAddressCheckScore": 100,
             "permanentAddressCheckScore": 100,
+            "towTime": calculate_tow_time(c),  # Time of Work/Time on Work metric
         },
         "employmentData": {
             "isApplicable": True,
             "impact": "Low",
             "status": normalize_status(c.verification_status.name if c.verification_status else None),
             "data": {"result": [], "status": 200, "message": "Verified"},
+            "towTime": calculate_tow_time(c),  # Time of Work/Time on Work metric
         },
         "courtData": {
             "isApplicable": True,
@@ -227,7 +280,9 @@ async def get_admin_report_detail(
             "impact": "Low",
             "weightage": "25%",
             "status": normalize_status(c.verification_status.name if c.verification_status else None),
-            "data": {"total": 0, "status": 200, "pdfName": "", "cases": []},
+            "data": (getattr(c.report_court_check, "data", None) if getattr(c, "report_court_check", None) else None)
+                or ((getattr(c.report_court_check, "apis", {}) or {}).get("court_search") if getattr(c, "report_court_check", None) else None)
+                or {"total": 0, "status": 200, "pdfName": "", "cases": []},
         },
         "amlData": {
             "isApplicable": True,
@@ -249,7 +304,14 @@ async def get_admin_report_detail(
                 "ifscInfo": {},
                 "bankRefNo": "",
                 "nameMatchScore": 100,
-                "beneficiaryName": f"{c.first_name} {c.last_name or ''}".strip(),
+                "beneficiaryName": (
+                    # Use real beneficiary name from bank account (updated by external API)
+                    getattr(c.bank_account, "name", None) if getattr(c, "bank_account", None) else None
+                    # Fallback to report data if available
+                    or (getattr(c.report_bank_account, "data", {}).get("beneficiaryName") if getattr(c, "report_bank_account", None) else None)
+                    # Final fallback to candidate name
+                    or f"{c.first_name} {c.last_name or ''}".strip()
+                ),
                 "nameMatchStatus": "MATCHED",
                 "verificationStatus": "VERIFIED",
             },
@@ -266,6 +328,7 @@ async def get_admin_report_detail(
         "candidateCode": c.candidate_code,
         "score": int(c.score) if c.score is not None else 100,
         "verificationStatus": {"name": normalize_status(c.verification_status.name if c.verification_status else None)},
+        "towTime": calculate_tow_time(c),  # Time of Work/Time on Work metric
         "bankAccount": {
             "accountNo": getattr(c.bank_account, "account_no", None) if getattr(c, "bank_account", None) else None,
             "ifsc": getattr(c.bank_account, "ifsc", None) if getattr(c, "bank_account", None) else None,
@@ -285,6 +348,7 @@ async def get_admin_report_detail(
             "pan": getattr(c.nid, "pan", "") if getattr(c, "nid", None) else "",
             "passport": getattr(c.nid, "passport", "") if getattr(c, "nid", None) else "",
             "aadharNo": getattr(c.nid, "aadhar_no", "") if getattr(c, "nid", None) else "",
+            "uanNo": getattr(c.nid, "uan_no", "") if getattr(c, "nid", None) else "",
             "panNo": getattr(c.nid, "pan_no", "") if getattr(c, "nid", None) else "",
         },
         "address": [
