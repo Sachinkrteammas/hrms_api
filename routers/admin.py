@@ -268,12 +268,30 @@ async def get_admin_report_detail(
             "towTime": calculate_tow_time(c),  # Time of Work/Time on Work metric
         },
         "employmentData": {
-            "isApplicable": True,
-            "impact": "Low",
-            "status": normalize_status(c.verification_status.name if c.verification_status else None),
-            "data": {"result": [], "status": 200, "message": "Verified"},
-            "towTime": calculate_tow_time(c),  # Time of Work/Time on Work metric
-        },
+        "isApplicable": True,
+        "impact": "Low",
+        "status": normalize_status(
+            c.report_employment.verification_status.name
+            if getattr(c, "report_employment", None)
+               and getattr(c.report_employment, "verification_status", None)
+            else None
+        ),
+        "towTime": calculate_tow_time(c),
+        "data": (
+            getattr(c.report_employment, "data", None)
+            if getattr(c, "report_employment", None)
+            else None
+        )
+        or (
+            (getattr(c.report_employment, "apis", {}) or {}).get("employment_history")
+            if getattr(c, "report_employment", None)
+            else None
+        )
+        or {"result": [], "status": 200, "message": "Verified"},
+    },
+
+
+
         "courtData": {
             "isApplicable": True,
             "score": c.report_court_check.score if getattr(c, "report_court_check", None) and c.report_court_check.score is not None else 100,

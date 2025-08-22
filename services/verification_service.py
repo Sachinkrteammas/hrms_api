@@ -84,6 +84,8 @@ class VerificationService:
                 headers=self._befisc_headers(),
                 timeout=60
             )
+            print(f"🔹 HTTP Status: {resp.status_code}")
+            print(f"🔹 Response Text: {resp.text}")  # raw response for debugging
             resp.raise_for_status()
             return resp.json()
         except Exception as e:

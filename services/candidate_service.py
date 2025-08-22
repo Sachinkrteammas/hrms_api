@@ -592,24 +592,52 @@ class CandidateService:
                 self.db.add(employment_report)
                 self.db.flush()
 
-            apis = employment_report.apis or {}
-            data = employment_report.data or {}
-
-            uan = candidate.uan
-            if not uan and candidate.nid and getattr(candidate.nid, "aadhar_no", None):
+            # Determine UAN
+            uan = None
+            if candidate.nid and getattr(candidate.nid, "uan_no", None):
+                uan = candidate.nid.uan_no
+            elif candidate.uan:
+                uan = candidate.uan
+            elif candidate.nid and getattr(candidate.nid, "aadhar_no", None):
                 uan = await verifier.uan_from_aadhar(candidate.nid.aadhar_no)
+
             if uan:
                 hist = await verifier.get_all_employment_history(uan)
-                apis["employment_history"] = hist
-                data["uan"] = uan
-                candidate.uan = uan
+                print(f"📄 Raw employment history response: {hist}")
 
-            employment_report.apis = apis
-            employment_report.data = data
-            # Update check status: mark verified if we have UAN or employment history data
-            candidate.employment_check = CheckStatus.verified if (data.get("uan") or apis.get("employment_history")) else CheckStatus.pending
-        except Exception:
-            pass
+                # Transform for frontend keys
+                frontend_result = []
+                for item in hist.get("result", []):
+                    frontend_result.append({
+                        "establishment_name": item.get("establishment_name"),  # matches frontend
+                        "date_of_joining": item.get("date_of_joining"),  # matches frontend
+                        "last_pf_submitted": item.get("date_of_exit") or item.get("last_pf_submitted")  # exit/PF
+                    })
+
+                apis = {"employment_history": hist}  # raw API response
+                data = {
+                    "uan": uan,
+                    "result": frontend_result,
+                    "status": hist.get("status", 200),
+                    "message": hist.get("message", "Verified")
+                }
+
+                candidate.uan = uan
+                employment_report.apis = apis
+                employment_report.data = data
+
+            # Update check status
+            candidate.employment_check = (
+                CheckStatus.verified if (data.get("uan") and frontend_result) else CheckStatus.pending
+            )
+
+            # Commit to DB
+            self.db.commit()
+            print("✅ Employment history saved successfully")
+
+        except Exception as e:
+            self.db.rollback()
+            print(f"❌ Employment check failed: {e}")
 
         # Court checks
         try:
