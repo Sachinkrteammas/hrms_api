@@ -39,13 +39,13 @@ class CandidateCreate(BaseModel):
     email: str = Field(..., min_length=1)
 
 class ManagerInfo(BaseModel):
-    firstName: Optional[str]
-    middleName: Optional[str]
-    lastName: Optional[str]
-    email: Optional[str]
-    phone: Optional[str]
-    employeeCode: Optional[str]
-    department: Optional[str]
+    firstName: Optional[str] = None
+    middleName: Optional[str] = None
+    lastName: Optional[str] = None
+    email: Optional[str] = None
+    phone: Optional[str] = None
+    employeeCode: Optional[str] = None
+    department: Optional[str] = None
 
 class EmploymentUpdate(BaseModel):
     company: Optional[str]

@@ -180,12 +180,26 @@ class CandidateService:
         if 'nid' in update_data and update_data['nid']:
             existing_nid = self.db.query(CandidateNid).filter_by(candidate_id=candidate.id).first()
             nid_data_raw = update_data['nid'].dict() if hasattr(update_data['nid'], "dict") else update_data['nid']
+            # Accept multiple key styles from frontend
+            pan_number = (
+                nid_data_raw.get('panNo')
+                or nid_data_raw.get('pan_no')
+                or nid_data_raw.get('panNumber')
+            )
+            uan_number = nid_data_raw.get('uanNo') or nid_data_raw.get('uan_no')
+            aadhar_number = nid_data_raw.get('aadharNo') or nid_data_raw.get('aadhar_no')
+            passport_number = nid_data_raw.get('passportNo') or nid_data_raw.get('passport_no')
+
+            # Only include valid model columns
             nid_data = {
-                'aadhar_no': nid_data_raw.get('aadharNo'),
-                'uan_no': nid_data_raw.get('uanNo'),
-                'pan_no': nid_data_raw.get('panNo'),
-                'voter_id': nid_data_raw.get('voterId'),
-                'passport_no': nid_data_raw.get('passportNo'),
+                'photo': nid_data_raw.get('photo'),
+                'aadhar': nid_data_raw.get('aadhar'),
+                'pan': nid_data_raw.get('pan'),
+                'passport': nid_data_raw.get('passport'),
+                'aadhar_no': aadhar_number,
+                'uan_no': uan_number,
+                'pan_no': pan_number,
+                'passport_no': passport_number,
             }
             nid_data = {k: v for k, v in nid_data.items() if v is not None}
             if existing_nid:
@@ -716,9 +730,21 @@ class CandidateService:
             ml = await verifier.aml_verification(dto)
             apis["aml"] = ml
             aml_report.apis = apis
-            aml_report.score = 100 if ml else 60
+
+            # Determine if there are zero AML cases in the response
+            no_cases = False
+            if isinstance(ml, dict):
+                data_block = (ml.get("data") or {}) if isinstance(ml.get("data"), dict) else {}
+                entity_checks = data_block.get("entitychecks") or ml.get("entitychecks") or []
+                case_outcome = data_block.get("Case_Outcome") or ml.get("Case_Outcome") or {}
+                no_cases = (len(entity_checks) == 0) and (not case_outcome)
+            else:
+                # If API returned nothing/None, treat as no cases
+                no_cases = True
+
+            aml_report.score = 100 if no_cases else 60
             # Update check status from API result
-            candidate.aml_check = CheckStatus.verified if ml else CheckStatus.pending
+            candidate.aml_check = CheckStatus.verified if no_cases else CheckStatus.pending
         except Exception:
             pass
 

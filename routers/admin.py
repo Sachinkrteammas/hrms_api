@@ -14,10 +14,104 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from models import CompanyUser, Candidate, Company  # Ensure all models are imported
 from models.candidate import Candidate
-
+from schemas.admin import WhiteListSuperAdminDTO, AdminResponse
+from services.admin_service import AdminService
+from services.company_service import CompanyService
+from services.email_service import EmailService
+from dependencies.auth import get_super_admin_create_guard
 
 
 router = APIRouter()
+
+@router.post("/add/super", response_model=AdminResponse)
+async def white_list_super_admin(
+    dto: WhiteListSuperAdminDTO,
+    db: Session = Depends(get_db),
+    _: bool = Depends(get_super_admin_create_guard)
+):
+    """Add super admin with same flow as Node.js version"""
+    try:
+        # Initialize services
+        admin_service = AdminService(db)
+        company_service = CompanyService(db)
+        email_service = EmailService()
+
+        # Create super admin
+        admin = await admin_service.white_list_super_admin(dto)
+        
+        # Create/update company for the super admin
+        await company_service.upsert_company(
+            company_id=None,
+            admin_id=admin.id,
+            company_data=None,
+            credits=dto.credits,
+            subscription_id=dto.subscription_id
+        )
+
+        # Send email to admin
+        try:
+            message = admin_service.get_admin_sign_up_message(admin.pass_code)
+            await email_service.send_email(
+                admin.email,
+                'Welcome to Infiniti HRMS portal',
+                text_content=message
+            )
+        except Exception as err:
+            print(f"Error sending email: {err}")
+
+        return AdminResponse(
+            message="Super admin added successfully",
+            pass_code=admin.pass_code  # Include pass code for testing
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+
+@router.get("/config")
+async def get_admin_config(
+    current_user: User = Depends(get_current_admin_user),
+    db: Session = Depends(get_db)
+):
+    """Return admin portal config including company info and flags."""
+    company_user = db.query(CompanyUser).filter(CompanyUser.user_id == current_user.id).first()
+    if not company_user:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="User not associated with any company"
+        )
+
+    company = db.query(Company).filter(Company.id == company_user.company_id).first()
+    subscription = getattr(getattr(company, "subscription_company", None), "subscription", None) if company else None
+
+    return {
+        "company": {
+            "id": company.id if company else None,
+            "name": company.name if company else "",
+            "gst": company.gst if company else "",
+            "contactPerson": company.contact_person if company else "",
+            "phone": company.phone if company else "",
+            "email": company.email if company else "",
+            "residencyNo": company.residency_no if company else "",
+            "landmark": company.landmark if company else "",
+            "city": company.city if company else "",
+            "state": company.state if company else "",
+            "country": company.country if company else "",
+            "pincode": company.pincode if company else "",
+        },
+        "subscription": {
+            "id": subscription.id if subscription else 1,
+            "name": subscription.name if subscription else "Basic",
+        },
+        "canUpdateCompany": True,
+        "canAddAdmin": True,
+        "canAddCandidates": True,
+        "companyIncomplete": False,
+        "services": subscription.services if getattr(subscription, "services", None) else [],
+        "showReference": True,
+    }
+
 
 def start_of_day(dt: datetime) -> datetime:
     return datetime(dt.year, dt.month, dt.day)
@@ -194,12 +288,30 @@ async def get_admin_reports(
     # Build report list items expected by frontend
     def compute_score(c: Candidate) -> int:
         scores = []
+        # Derive AML score as 100 when there are zero cases even if DB has 60
+        def derive_aml_score() -> int:
+            try:
+                if not getattr(c, "report_aml", None):
+                    return 100
+                aml_apis = getattr(c.report_aml, "apis", {}) or {}
+                aml_payload = aml_apis.get("aml") or {}
+                if isinstance(aml_payload, dict):
+                    data_block = aml_payload.get("data") or {}
+                    entity_checks = data_block.get("entitychecks") or aml_payload.get("entitychecks") or []
+                    case_outcome = data_block.get("Case_Outcome") or aml_payload.get("Case_Outcome") or {}
+                    no_cases = (len(entity_checks) == 0) and (not case_outcome)
+                    if no_cases:
+                        return 100
+                # Fall back to stored score if present
+                return c.report_aml.score if c.report_aml.score is not None else 100
+            except Exception:
+                return c.report_aml.score if getattr(c, "report_aml", None) and c.report_aml.score is not None else 100
         if getattr(c, "report_identity", None) and c.report_identity.score is not None:
             scores.append(c.report_identity.score)
         if getattr(c, "report_court_check", None) and c.report_court_check.score is not None:
             scores.append(c.report_court_check.score)
-        if getattr(c, "report_aml", None) and c.report_aml.score is not None:
-            scores.append(c.report_aml.score)
+        if getattr(c, "report_aml", None):
+            scores.append(derive_aml_score())
         if getattr(c, "report_bank_account", None) and c.report_bank_account.score is not None:
             scores.append(c.report_bank_account.score)
         if scores:
@@ -255,7 +367,7 @@ async def get_admin_report_detail(
             "isIdentityVerified": True,
             "impact": "Low",
             "score": c.report_identity.score if getattr(c, "report_identity", None) and c.report_identity.score is not None else 100,
-            "weightage": "25%",
+            "weightage": 25,
             "status": normalize_status(c.verification_status.name if c.verification_status else None),
             "isAadharVerified": True,
             "isDobVerified": True,
@@ -296,7 +408,7 @@ async def get_admin_report_detail(
             "isApplicable": True,
             "score": c.report_court_check.score if getattr(c, "report_court_check", None) and c.report_court_check.score is not None else 100,
             "impact": "Low",
-            "weightage": "25%",
+            "weightage": 25,
             "status": normalize_status(c.verification_status.name if c.verification_status else None),
             "data": (getattr(c.report_court_check, "data", None) if getattr(c, "report_court_check", None) else None)
                 or ((getattr(c.report_court_check, "apis", {}) or {}).get("court_search") if getattr(c, "report_court_check", None) else None)
@@ -304,9 +416,21 @@ async def get_admin_report_detail(
         },
         "amlData": {
             "isApplicable": True,
-            "score": c.report_aml.score if getattr(c, "report_aml", None) and c.report_aml.score is not None else 100,
+            "score": (lambda: (
+                (lambda aml_payload: (
+                    100 if (
+                        isinstance(aml_payload, dict)
+                        and (
+                            len((aml_payload.get("data") or {}).get("entitychecks") or aml_payload.get("entitychecks") or []) == 0
+                        )
+                        and (not ((aml_payload.get("data") or {}).get("Case_Outcome") or aml_payload.get("Case_Outcome") or {}))
+                    ) else 100 if aml_payload is None else (c.report_aml.score if getattr(c, "report_aml", None) and c.report_aml.score is not None else 100)
+                ))(
+                    (((getattr(c.report_aml, "apis", {}) or {}).get("aml") or {}) if getattr(c, "report_aml", None) else {})
+                )
+            ))(),
             "impact": "Low",
-            "weightage": "25%",
+            "weightage": 25,
             "status": normalize_status(c.verification_status.name if c.verification_status else None),
             "data": {"Case_Outcome": {}, "entitychecks": []},
         },
@@ -314,7 +438,7 @@ async def get_admin_report_detail(
             "isApplicable": True,
             "impact": "Low",
             "score": c.report_bank_account.score if getattr(c, "report_bank_account", None) and c.report_bank_account.score is not None else 100,
-            "weightage": "25%",
+            "weightage": 25,
             "status": normalize_status(c.verification_status.name if c.verification_status else None),
             "data": {
                 "status": 200,

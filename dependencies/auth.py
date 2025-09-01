@@ -70,10 +70,18 @@ def get_current_user(
     return user
 
 def get_current_admin_user(current_user: User = Depends(get_current_user)) -> User:
-    if not current_user.role_rel or current_user.role_rel.name not in ["HR_HEAD", "HR"]:
+    if not current_user.role_rel or current_user.role_rel.name not in ["HR_HEAD", "HR", "SUPERADMIN"]:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Not enough permissions"
+        )
+    return current_user
+
+def get_current_super_admin_user(current_user: User = Depends(get_current_user)) -> User:
+    if not current_user.role_rel or current_user.role_rel.name != "SUPERADMIN":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Super admin access required"
         )
     return current_user
 
@@ -107,3 +115,10 @@ def generate_access_token() -> str:
 def get_company_id_from_user(user: User, db: Session) -> Optional[int]:
     company_user = db.query(CompanyUser).filter(CompanyUser.user_id == user.id).first()
     return company_user.company_id if company_user else None
+
+# For super admin creation - no authentication required
+def get_super_admin_create_guard():
+    """Guard for super admin creation - can be used for API key validation or other checks"""
+    # For now, we'll allow this endpoint without authentication
+    # In production, you might want to add API key validation or other security measures
+    return True

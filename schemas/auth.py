@@ -6,8 +6,9 @@ class UserSignUp(BaseModel):
     email: EmailStr
     password: str = Field(..., min_length=6)
     name: str = Field(..., min_length=1, max_length=100)
-    company_code: str = Field(..., min_length=1, max_length=20)
-    pass_code: str = Field(..., min_length=6, max_length=6)
+    company_code: Optional[str] = Field(None, min_length=1, max_length=20)
+    pass_code: Optional[str] = Field(None, min_length=6, max_length=6)
+    passCode: Optional[str] = Field(None, alias="passCode")  # Alternative field name for frontend compatibility
 
 class UserLogin(BaseModel):
     email: EmailStr

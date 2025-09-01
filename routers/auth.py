@@ -26,70 +26,101 @@ async def user_signup(
     db: Session = Depends(get_db)
 ):
     """User signup endpoint"""
-    # Check if user already exists
-    existing_user = db.query(User).filter(User.email == user_data.email).first()
-    if existing_user:
+    # Handle pass code - check both pass_code and passCode fields
+    actual_pass_code = user_data.pass_code or user_data.passCode
+    if not actual_pass_code:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="User with this email already exists"
+            detail="Pass code is required"
         )
     
-    # Check if company exists
-    company = db.query(Company).filter(Company.code == user_data.company_code).first()
+    # Find user by pass code (for super admin signup)
+    user_with_pass_code = db.query(User).filter(
+        User.pass_code == actual_pass_code.strip(),
+        User.email == user_data.email
+    ).first()
+    
+    if not user_with_pass_code:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid pass code or email combination"
+        )
+    
+    # Check if user is already signed up (has password)
+    if user_with_pass_code.password:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="User is already signed up"
+        )
+    
+    # Get user's role
+    user_role = db.query(Role).filter(Role.id == user_with_pass_code.role).first()
+    if not user_role:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="User role not found"
+        )
+    
+    # Update user with password and clear pass code
+    user_with_pass_code.password = get_password_hash(user_data.password)
+    user_with_pass_code.pass_code = None  # Clear pass code after successful signup
+    
+    # Create user meta if not exists
+    existing_meta = db.query(UserMeta).filter(UserMeta.user_id == user_with_pass_code.id).first()
+    if not existing_meta:
+        user_meta = UserMeta(
+            name=user_data.name,
+            user_id=user_with_pass_code.id
+        )
+        db.add(user_meta)
+    
+    # For super admin, find their company
+    company = None
+    if user_role.name == "SUPERADMIN":
+        # Find company associated with super admin
+        company_user = db.query(CompanyUser).filter(CompanyUser.user_id == user_with_pass_code.id).first()
+        if company_user:
+            company = db.query(Company).filter(Company.id == company_user.company_id).first()
+    else:
+        # For regular users, check company code
+        if not user_data.company_code:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Company code is required for non-super admin users"
+            )
+        company = db.query(Company).filter(Company.code == user_data.company_code).first()
+        if not company:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid company code"
+            )
+    
     if not company:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid company code"
+            detail="Company not found"
         )
-    
-    # Get HR role
-    hr_role = db.query(Role).filter(Role.name == "HR").first()
-    if not hr_role:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="HR role not found"
-        )
-    
-    # Create user
-    hashed_password = get_password_hash(user_data.password)
-    user = User(
-        email=user_data.email,
-        password=hashed_password,
-        pass_code=user_data.pass_code,
-        role=hr_role.id
-    )
-    db.add(user)
-    db.flush()  # Get the user ID
-    
-    # Create user meta
-    user_meta = UserMeta(
-        name=user_data.name,
-        user_id=user.id
-    )
-    db.add(user_meta)
-    
-    # Create company user relationship
-    company_user = CompanyUser(
-        company_id=company.id,
-        user_id=user.id
-    )
-    db.add(company_user)
     
     db.commit()
-    db.refresh(user)
+    db.refresh(user_with_pass_code)
     
     # Generate access token
     access_token = create_access_token(
-        data={"sub": str(user.id), "email": user.email}
+        data={"sub": str(user_with_pass_code.id), "email": user_with_pass_code.email}
     )
     
     return TokenResponse(
-        access_token=access_token,
-        user_id=user.id,
-        email=user.email,
-        name=user_data.name,
-        company_id=company.id,
-        role=hr_role.name
+        accessToken=access_token,
+        id=user_with_pass_code.id,
+        email=user_with_pass_code.email,
+        firstName=user_data.name.split()[0] if user_data.name else "",
+        lastName=" ".join(user_data.name.split()[1:]) if user_data.name and len(user_data.name.split()) > 1 else "",
+        phone="",
+        company={
+            "id": company.id,
+            "name": company.name,
+            "code": company.code
+        }
     )
 
 # @router.post("/login", response_model=TokenResponse)

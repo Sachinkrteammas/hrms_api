@@ -89,32 +89,107 @@ class EmailService:
         return True
 
     def _generate_candidate_email_html(self, candidate, company_name: str) -> str:
-        """Generate HTML email content for candidate"""
+        """Generate formatted HTML email content for candidate"""
         return f"""
         <html>
-        <body>
-            <h2>Welcome to our background verification process</h2>
-            <p>Dear {candidate.first_name},</p>
-            <p>You have been invited to complete your background verification for {company_name}.</p>
-            <p>Please click the link below to access your verification portal:</p>
-            <p><a href=\"{settings.FRONTEND_URL}/login/{encrypt_slug(str(candidate.id))}\">Access Verification Portal</a></p>
-            <p>Best regards,<br>HR Team</p>
+        <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
+          <p>Dear <b>{candidate.first_name} {candidate.last_name}</b>,</p>
+
+          <p>
+            Greetings from <b>InfinitiAI</b> - the Fastest, most Reliable and Innovative Indian 
+            Employee Background Verification company.
+          </p>
+
+          <p>
+            We have been engaged by <b>{company_name}</b> to conduct your background verification 
+            as a part of their hiring process. We require you to submit some information in that regard.
+          </p>
+
+          <p>
+            Please refer below enclosed a link to our platform <b>InfinitiAI</b>, for you to register 
+            and submit this information. Instructions for filling the form are mentioned later in this 
+            email to provide you with a seamless experience. Kindly note that the information shared by 
+            you will be used only for the purpose of background verification.
+          </p>
+
+          <p>
+            Background verification is an extremely important part of your hiring process at 
+            <b>{company_name}</b>, and it's our priority to keep this process simple and convenient for you.
+          </p>
+
+          <p><b>Steps to follow:</b></p>
+          <ol>
+            <li>
+              Please arrange the scanned copies of your documents like Identity proof, education 
+              mark sheets, degree, work experience (or relieving letter), etc.
+            </li>
+            <li>
+              Use the link below to register at our InfinitiAI portal. Once registered, you should 
+              fill the form and upload the documents with utmost care and attention.
+            </li>
+          </ol>
+
+          <p>
+            <b>InfinitiAI Portal:</b> 
+            <a href="{settings.FRONTEND_URL}/login/{encrypt_slug(str(candidate.id))}">
+              Click here to login
+            </a>
+            <br>
+            <b>User ID:</b> {candidate.email}
+          </p>
+
+          <p><b>Important Instructions:</b></p>
+          <ul>
+            <li>Your login credentials will expire in <b>7 days</b> from receipt of this mail.</li>
+            <li>Since Background Verification is an important step in the hiring process, please ensure accuracy.</li>
+            <li>We recommend completing your submission in a single sitting.</li>
+            <li>Please ensure that the scanned copies of the documents uploaded are clear.</li>
+          </ul>
+
+          <p>
+            Best Regards,<br>
+            <b>HR Team</b><br>
+            InfinitiAI
+          </p>
         </body>
         </html>
         """
 
     def _generate_candidate_email_text(self, candidate, company_name: str) -> str:
-        """Generate text email content for candidate"""
+        """Generate formatted email content for candidate"""
         return f"""
-        Welcome to our background verification process
+        Dear {candidate.first_name} {candidate.last_name},
 
-        Dear {candidate.first_name},
+        Greetings from InfinitiAI - the Fastest, most Reliable and Innovative Indian Employee Background Verification company.
 
-        You have been invited to complete your background verification for {company_name}.
+        We have been engaged by {company_name} to conduct your background verification as a part of their hiring process. 
+        We require you to submit some information in that regard.
 
-        Please visit the following link to access your verification portal:
-        {settings.FRONTEND_URL}/login/{encrypt_slug(str(candidate.id))}
+        Please refer below enclosed a link to our platform InfinitiAI, for you to register and submit this information. 
+        Instructions for filling the form are mentioned later in this email to provide you with a seamless experience. 
+        Kindly note that the information shared by you will be used only for the purpose of background verification.
 
-        Best regards,
+        Background verification is an extremely important part of your hiring process at {company_name}, and it's our priority 
+        to keep this process simple and convenient for you.
+
+        All you need to do is carefully follow some simple steps and instructions as mentioned below:
+
+        Step 1: Please arrange the scanned copies of your documents like Identity proof, education mark sheets, degree, 
+        work experience (or relieving letter), etc.
+
+        Step 2: Use the link below to register at our InfinitiAI portal. Once registered, you should fill the form and upload 
+        the documents with utmost care and attention.
+
+        InfinitiAI Portal: {settings.FRONTEND_URL}/login/{encrypt_slug(str(candidate.id))}
+        User ID: {candidate.email}
+
+        Important Instructions:
+        • Your login credentials will expire in 7 days from receipt of this mail, so please complete this process within this time-period.
+        • Since Background Verification is an important step in the hiring process, please ensure that you fill the form with utmost care and accuracy.
+        • We recommend completing your submission in a single sitting.
+        • Please ensure that the scanned copies of the documents uploaded are clear.
+
+        Best Regards,
         HR Team
-        """ 
+        InfinitiAI
+        """

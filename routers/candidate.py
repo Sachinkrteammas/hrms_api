@@ -576,21 +576,51 @@ async def create_bank_account(
         return BaseResponse(message=f"Failed to create bank account: {str(e)}")
 
 # Reference check endpoints
-@router.get("/reference", response_model=List[ReferenceResponse])
+@router.get("/reference")
 async def get_reference_data(
     current_user: User = Depends(get_current_admin_user),
     db: Session = Depends(get_db)
 ):
-    """Get reference data for company"""
+    """Get reference data for company (shaped for frontend)"""
     company_user = db.query(CompanyUser).filter(CompanyUser.user_id == current_user.id).first()
     if not company_user:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="User not associated with any company"
         )
-    
+
+    # Fetch raw references
     candidate_service = CandidateService(db)
-    return await candidate_service.get_reference_data(company_user.company_id)
+    refs = await candidate_service.get_reference_data(company_user.company_id)
+
+    # Map backend model to frontend shape
+    def map_status(s: str | None) -> str:
+        upper = (s or "").upper()
+        if upper in {"PENDING", "REQUESTED"}:
+            return "REQUESTED"
+        if upper == "SUBMITTED":
+            return "SUBMITTED"
+        return upper or "REQUESTED"
+
+    data = []
+    for r in refs:
+        c = getattr(r, "candidate", None)
+        item = {
+            "id": r.id,
+            "referenceEmail": r.reference_email,
+            "referenceName": r.reference_name,
+            "status": map_status(getattr(r.status, "name", None) if hasattr(r, "status") else str(r.status) if r.status else None),
+            "created_at": r.created_at.isoformat() if getattr(r, "created_at", None) else None,
+            "candidate": {
+                "id": getattr(c, "id", None) if c else None,
+                "firstName": getattr(c, "first_name", "") if c else "",
+                "middleName": getattr(c, "middle_name", "") if c else "",
+                "lastName": getattr(c, "last_name", "") if c else "",
+            },
+        }
+        data.append(item)
+
+    return data
 
 @router.post("/reference/login", response_model=TokenResponse)
 async def reference_login(
