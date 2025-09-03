@@ -623,13 +623,38 @@ async def get_reference_data(
     return data
 
 @router.post("/reference/login", response_model=TokenResponse)
-async def reference_login(
+async def reference_login_legacy(
     reference_data: dict,
     db: Session = Depends(get_db)
 ):
-    """Reference login endpoint"""
+    """Reference login endpoint (legacy - expects id in body)"""
+    reference_id = reference_data.get("id")
+    if not reference_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Reference ID is required"
+        )
+    
     candidate_service = CandidateService(db)
-    return await candidate_service.reference_login(reference_data)
+    return await candidate_service.reference_login(reference_id, reference_data)
+
+@router.post("/reference/login/{slug}", response_model=TokenResponse)
+async def reference_login_with_slug(
+    slug: str,
+    reference_data: dict,
+    db: Session = Depends(get_db)
+):
+    """Reference login endpoint (new - uses slug from email)"""
+    try:
+        reference_id = decrypt_slug(slug)
+    except:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid slug"
+        )
+    
+    candidate_service = CandidateService(db)
+    return await candidate_service.reference_login(reference_id, reference_data)
 
 @router.post("/reference/sendEmail", response_model=BaseResponse)
 async def send_reference_email(
@@ -645,7 +670,7 @@ async def send_reference_email(
     
     return BaseResponse(message="Email sent successfully")
 
-@router.put("/reference/update", response_model=BaseResponse)
+@router.post("/reference/update", response_model=BaseResponse)
 async def update_reference(
     reference_data: ReferenceUpdate,
     db: Session = Depends(get_db)
@@ -692,6 +717,47 @@ async def get_reference_details_by_slug(
         "candidate": {
             "name": f"{reference.candidate.first_name} {reference.candidate.last_name or ''}".strip()
         }
+    }
+
+@router.get("/reference/{reference_id}/details")
+async def get_reference_details_by_id(
+    reference_id: int,
+    db: Session = Depends(get_db)
+):
+    """Get reference details by ID (for admin panel)"""
+    candidate_service = CandidateService(db)
+    reference = await candidate_service.get_reference(reference_id)
+    
+    if not reference:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Reference not found"
+        )
+    
+    # Return detailed reference information including all the new fields
+    return {
+        "id": reference.id,
+        "referenceName": reference.reference_name,
+        "referenceEmail": reference.reference_email,
+        "referencePhone": reference.reference_phone,
+        "referenceDesignation": reference.reference_designation,
+        "candidateDOJ": reference.candidate_doj,
+        "candidateLWD": reference.candidate_lwd,
+        "candidateLeavingReason": reference.candidate_leaving_reason,
+        "candidateStrengths": reference.candidate_strengths,
+        "candidateImprovements": reference.candidate_improvements,
+        "comments": reference.comments,
+        "lastCTC": reference.last_ctc,
+        "rehire": reference.rehire,
+        "status": reference.status.name if hasattr(reference.status, 'name') else str(reference.status),
+        "createdAt": reference.created_at.isoformat() if reference.created_at else None,
+        "updatedAt": reference.updated_at.isoformat() if reference.updated_at else None,
+        "candidate": {
+            "id": reference.candidate.id if reference.candidate else None,
+            "name": f"{reference.candidate.first_name or ''} {reference.candidate.last_name or ''}".strip() if reference.candidate else "",
+            "firstName": reference.candidate.first_name if reference.candidate else "",
+            "lastName": reference.candidate.last_name if reference.candidate else ""
+        } if reference.candidate else None
     } 
 
 @router.post("/complete", response_model=BaseResponse)

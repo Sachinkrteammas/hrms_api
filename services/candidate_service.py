@@ -9,12 +9,13 @@ from datetime import date as _date
 from models.candidate import Candidate, CandidateNid, CandidateAddress, CandidateEducation, CandidateEmployment, CandidateBankAccount, CandidateAadharDetails, CheckStatus
 from models.candidate import Gender as ModelGender
 from models.verification import VerificationStatus, ReportIdentity, ReportEmployment, ReportCourtCheck, ReportAml, ReportBankAccount
-from models.reference import CandidateReferenceCheck
+from models.reference import CandidateReferenceCheck, ReferenceCheckStatus
 from schemas.candidate import CandidateCreate, CandidateUpdate, CandidateLogin
 from dependencies.auth import get_password_hash, create_access_token
 from utils.candidate_utils import generate_candidate_code
 import re
 from models.company import Company
+from services.email_service import EmailService
 
 
 def camel_to_snake(name):
@@ -329,6 +330,8 @@ class CandidateService:
             "manager"
         }
 
+        created_reference_checks: list[CandidateReferenceCheck] = []
+        employment_entries_present = False
         if 'employment' in update_data and update_data['employment']:
             employment_data_block = update_data['employment']
 
@@ -360,6 +363,40 @@ class CandidateService:
 
                 new_employment = CandidateEmployment(candidate_id=candidate.id, **employment_data_snake)
                 self.db.add(new_employment)
+                employment_entries_present = True
+
+                # Create reference checks for each employment entry that has company and email
+                reference_email = employment_data_snake.get('email')
+                reference_name = employment_data_snake.get('company')
+                if reference_email and reference_name:
+                    ref_check = CandidateReferenceCheck(
+                        candidate_id=candidate.id,
+                        company_id=candidate.company_id,
+                        status=ReferenceCheckStatus.PENDING,
+                        reference_name=reference_name,
+                        reference_email=reference_email,
+                    )
+                    self.db.add(ref_check)
+                    # Flush to get ID for slug generation in email
+                    self.db.flush()
+                    created_reference_checks.append(ref_check)
+
+        # If verify flag is set and we created reference checks based on employment entries,
+        # send reference emails to all collected referees.
+        try:
+            if (update_data.get('verify') is True) and created_reference_checks:
+                email_service = EmailService()
+                for ref in created_reference_checks:
+                    try:
+                        await email_service.send_reference_email(candidate, ref)
+                        # Mark as REQUESTED after successful send
+                        ref.status = ReferenceCheckStatus.REQUESTED
+                    except Exception:
+                        # Do not block candidate update on email failures
+                        pass
+        except Exception:
+            # Swallow any unexpected email-related exceptions
+            pass
 
         self.db.commit()
         self.db.refresh(candidate)
@@ -516,41 +553,97 @@ class CandidateService:
             CandidateReferenceCheck.company_id == company_id
         ).all()
 
-    async def reference_login(self, reference_data: Dict[str, Any]) -> Dict[str, Any]:
+    async def reference_login(self, reference_id: int, reference_data: Dict[str, Any]) -> Dict[str, Any]:
         """Reference login"""
         reference = self.db.query(CandidateReferenceCheck).filter(
-            CandidateReferenceCheck.id == reference_data.get("reference_id")
+            CandidateReferenceCheck.id == reference_id
         ).first()
         
         if not reference:
             raise ValueError("Invalid reference")
+        
+        # Validate email matches the reference
+        provided_email = reference_data.get("email", "").strip().lower()
+        reference_email = (reference.reference_email or "").strip().lower()
+        
+        if provided_email != reference_email:
+            raise ValueError("Email does not match reference")
         
         # Generate access token
         access_token = create_access_token(
             data={"sub": str(reference.id), "type": "reference"}
         )
         
+        # Get company info for the reference
+        company = None
+        if hasattr(reference, 'company') and reference.company:
+            company = {
+                "id": reference.company.id,
+                "name": reference.company.name,
+                "code": getattr(reference.company, 'code', ''),
+                "logo": getattr(reference.company, 'logo', ''),
+                "website": getattr(reference.company, 'website', '')
+            }
+        else:
+            # Fallback company info
+            company = {
+                "id": 1,
+                "name": "Company Name",
+                "code": "COMP",
+                "logo": "",
+                "website": ""
+            }
+        
+        # Split name into firstName and lastName
+        name_parts = (reference.reference_name or "").split(" ", 1)
+        firstName = name_parts[0] if name_parts else ""
+        lastName = name_parts[1] if len(name_parts) > 1 else ""
+        
         return {
-            "access_token": access_token,
-            "token_type": "bearer",
-            "reference_id": reference.id,
-            "name": reference.reference_name,
-            "email": reference.reference_email
+            "accessToken": access_token,  # Changed from access_token
+            "id": reference.id,           # Changed from reference_id
+            "email": reference.reference_email,  # Add required email field
+            "firstName": firstName,       # Split name into firstName
+            "lastName": lastName,         # Add lastName
+            "phone": "",                  # Add phone field (can be empty)
+            "company": company            # Add company object
         }
 
-    async def update_reference(self, reference_data: Dict[str, Any]) -> bool:
+    async def update_reference(self, reference_data) -> bool:
         """Update reference information"""
+        # Handle both dict and Pydantic model
+        if hasattr(reference_data, 'reference_id'):
+            reference_id = reference_data.reference_id
+        else:
+            reference_id = reference_data.get("reference_id")
+            
         reference = self.db.query(CandidateReferenceCheck).filter(
-            CandidateReferenceCheck.id == reference_data.get("reference_id")
+            CandidateReferenceCheck.id == reference_id
         ).first()
         
         if not reference:
             return False
         
-        # Update fields
-        for field, value in reference_data.items():
-            if hasattr(reference, field) and field != "reference_id":
-                setattr(reference, field, value)
+        # Update all fields directly since the schema now handles aliases
+        if hasattr(reference_data, '__dict__'):
+            # Pydantic model - access as attributes
+            for field, value in reference_data.__dict__.items():
+                if hasattr(reference, field) and field != "reference_id":
+                    # Don't overwrite reference_name and reference_email if they're empty
+                    if field in ["reference_name", "reference_email"] and not value:
+                        continue
+                    setattr(reference, field, value)
+        else:
+            # Dictionary - access with get
+            for field, value in reference_data.items():
+                if hasattr(reference, field) and field != "reference_id":
+                    # Don't overwrite reference_name and reference_email if they're empty
+                    if field in ["reference_name", "reference_email"] and not value:
+                        continue
+                    setattr(reference, field, value)
+        
+        # Update status to SUBMITTED when reference form is completed
+        reference.status = ReferenceCheckStatus.SUBMITTED
         
         self.db.commit()
         return True

@@ -21,6 +21,16 @@ class CandidateReferenceCheck(Base):
     status = Column(Enum(ReferenceCheckStatus), default=ReferenceCheckStatus.PENDING)
     reference_name = Column(String(100))
     reference_email = Column(String(100))
+    reference_phone = Column(String(20), nullable=True)
+    reference_designation = Column(String(100), nullable=True)
+    candidate_doj = Column(String(20), nullable=True)  # Date of joining
+    candidate_lwd = Column(String(20), nullable=True)  # Last working day
+    candidate_leaving_reason = Column(Text, nullable=True)
+    candidate_strengths = Column(Text, nullable=True)
+    candidate_improvements = Column(Text, nullable=True)
+    comments = Column(Text, nullable=True)
+    last_ctc = Column(String(50), nullable=True)
+    rehire = Column(Boolean, default=False)
     data = Column(Text, nullable=True)
 
     candidate = relationship("Candidate", back_populates="reference_checks")

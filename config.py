@@ -14,12 +14,13 @@ class Settings(BaseSettings):
     # Email settings
     SMTP_SERVER: str = "smtp.gmail.com"
     SMTP_PORT: int = 587
-    SMTP_USERNAME: str = "sachinkr78276438@gmail.com"
-    SMTP_PASSWORD: str = "efsn ryss yjin kwgr"
-    FROM_EMAIL: str = "sachinkr78276438@gmail.com"
+    SMTP_USERNAME: str = "support@theinfiniti.ai"
+    SMTP_PASSWORD: str = "dbfx zzic ctar hjyn"
+    FROM_EMAIL: str = "support@theinfiniti.ai"
     
     # Frontend settings
     FRONTEND_URL: str = "http://localhost:3001"
+    REFERENCE_FRONTEND_URL: str = "http://localhost:3002"
     
     # Verification API settings (generic)
     VERIFICATION_API_BASE_URL: str = "https://api.verification.com"

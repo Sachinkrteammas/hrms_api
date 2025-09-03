@@ -83,6 +83,43 @@ def migrate_database():
         else:
             print("✓ candidates table already exists")
         
+        # Check and add new columns to candidate_reference_check table
+        print("\nChecking candidate_reference_check table...")
+        
+        # List of new columns to add
+        new_columns = [
+            ("reference_phone", "VARCHAR(20) NULL"),
+            ("reference_designation", "VARCHAR(100) NULL"),
+            ("candidate_doj", "VARCHAR(20) NULL"),
+            ("candidate_lwd", "VARCHAR(20) NULL"),
+            ("candidate_leaving_reason", "TEXT NULL"),
+            ("candidate_strengths", "TEXT NULL"),
+            ("candidate_improvements", "TEXT NULL"),
+            ("comments", "TEXT NULL"),
+            ("last_ctc", "VARCHAR(50) NULL"),
+            ("rehire", "BOOLEAN DEFAULT FALSE")
+        ]
+        
+        for column_name, column_type in new_columns:
+            result = connection.execute(text(f"""
+                SELECT COUNT(*) as count 
+                FROM information_schema.columns 
+                WHERE table_schema = 'hrms_db' 
+                AND table_name = 'candidate_reference_check' 
+                AND column_name = '{column_name}'
+            """))
+            
+            if result.fetchone()[0] == 0:
+                print(f"Adding {column_name} column to candidate_reference_check table...")
+                try:
+                    connection.execute(text(f"ALTER TABLE candidate_reference_check ADD COLUMN {column_name} {column_type}"))
+                    connection.commit()
+                    print(f"✓ {column_name} column added successfully")
+                except Exception as e:
+                    print(f"⚠️ Error adding {column_name}: {e}")
+            else:
+                print(f"✓ {column_name} column already exists")
+        
         print("\n🎉 Database migration completed successfully!")
 
 if __name__ == "__main__":

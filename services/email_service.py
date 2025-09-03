@@ -79,14 +79,67 @@ class EmailService:
             print(f"Error in send_candidate_email: {e}")
             return False
 
-    async def send_reference_email(self, reference_id: int, resend: bool = False) -> bool:
-        """Send email to reference"""
-        # TODO: Get reference details and generate email
-        subject = "Reference check request"
-        html_content = "<p>Please provide reference information.</p>"
-        
-        # For now, return True as placeholder
-        return True
+    async def send_reference_email(self, candidate, reference, resend: bool = False) -> bool:
+        """Send email to reference with secure link"""
+        try:
+            if not reference or not getattr(reference, 'id', None):
+                return False
+
+            slug = encrypt_slug(str(reference.id))
+
+            subject = f"Reference check for {getattr(candidate, 'first_name', '')} {getattr(candidate, 'last_name', '')}"
+
+            base_url = settings.REFERENCE_FRONTEND_URL or settings.FRONTEND_URL
+            login_url = f"{base_url}/reference/login/{slug}"
+            reference_name = getattr(reference, 'reference_name', None) or getattr(reference, 'referenceEmail', None) or 'there'
+            user_id = getattr(reference, 'reference_email', None) or getattr(reference, 'referenceEmail', None) or ''
+
+            html_content = f"""
+            <html>
+            <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
+              <p>Hey <b>{reference_name}</b>,</p>
+
+              <p>
+                {getattr(candidate, 'first_name', '')} {getattr(candidate, 'last_name', '')} has provided your reference for their verification process.
+                To verify and complete the reference check, please click on the link below:
+              </p>
+
+              <p>
+                <a href="{login_url}">Click here to open the reference form</a>
+              </p>
+
+              <p>
+                Use <b>{user_id}</b> as your username to login.
+              </p>
+
+              <p>Best regards,<br/>InfinitiAI</p>
+            </body>
+            </html>
+            """
+
+            text_content = f"""
+            Hey {reference_name},
+
+            {getattr(candidate, 'first_name', '')} {getattr(candidate, 'last_name', '')} has provided your reference for their verification process.
+            To verify and complete the reference check, open this link:
+
+            {login_url}
+
+            Use {user_id} as your username to login.
+
+            Best regards,
+            InfinitiAI
+            """
+
+            return await self.send_email(
+                to_email=getattr(reference, 'reference_email', None) or getattr(reference, 'referenceEmail', None),
+                subject=subject,
+                html_content=html_content,
+                text_content=text_content,
+            )
+        except Exception as e:
+            print(f"Error in send_reference_email: {e}")
+            return False
 
     def _generate_candidate_email_html(self, candidate, company_name: str) -> str:
         """Generate formatted HTML email content for candidate"""

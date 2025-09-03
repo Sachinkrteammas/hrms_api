@@ -156,9 +156,23 @@ class ReferenceCreate(BaseModel):
     reference_email: str = Field(..., min_length=1)
 
 class ReferenceUpdate(BaseModel):
-    reference_name: Optional[str] = Field("", min_length=1, max_length=100)
-    reference_email: Optional[str] = Field("", min_length=1)
+    reference_id: int = Field(..., alias="referenceId")
+    reference_name: Optional[str] = Field("", min_length=1, max_length=100, alias="referenceName")
+    reference_email: Optional[str] = Field("", min_length=1, alias="referenceEmail")
+    reference_phone: Optional[str] = Field("", max_length=20, alias="referencePhone")
+    reference_designation: Optional[str] = Field("", max_length=100, alias="referenceDesignation")
+    candidate_doj: Optional[str] = Field("", max_length=20, alias="candidateDOJ")  # Date of joining
+    candidate_lwd: Optional[str] = Field("", max_length=20, alias="candidateLWD")  # Last working day
+    candidate_leaving_reason: Optional[str] = Field("", max_length=500, alias="candidateLeavingReason")
+    candidate_strengths: Optional[str] = Field("", max_length=500, alias="candidateStrengths")
+    candidate_improvements: Optional[str] = Field("", max_length=500, alias="candidateImprovements")
+    comments: Optional[str] = Field("", max_length=1000)
+    last_ctc: Optional[str] = Field("", max_length=50, alias="lastCTC")
+    rehire: Optional[bool] = False
     data: Optional[str] = None
+    
+    # Pydantic v2 model config to allow population by field name
+    model_config = ConfigDict(populate_by_name=True) if ConfigDict is dict else None
 
 class ReferenceResponse(BaseModel):
     id: int
